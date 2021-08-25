@@ -1,3 +1,7 @@
+class OrphanError(ValueError):
+  'Raised when you try to find the parent of an object that doesn\'t have one'
+
+
 class HeirachicalDict:
   def __init__(self, idict, get_parent):
     self.cont = idict
@@ -6,7 +10,7 @@ class HeirachicalDict:
 
   @classmethod
   def from_iter(cls, iiter, get_parent):
-    obj = cls({}, get_parent=get_parent)
+    obj = cls({}, get_parent)
     for item in iiter:
       obj.add(item)
     return obj
@@ -20,14 +24,16 @@ class HeirachicalDict:
   
 
   def add(self, item)->tuple:
-    if (path:=self.find(item)) is not None:
-      return path
-    if (parent:=self.get_parent(item)) is None:
-      parent_path = ()
-    elif (parent_path:=self.find(parent)) is None:
-      parent_path=self.add(parent)
-    self.follow(parent_path)[item] = {}
-    return parent_path + (item,)
+    try:
+      return self.find(item)
+    except KeyError:
+      try:
+        parent_path = self.add(self.get_parent(item))
+      except OrphanError: #F
+        parent_path = ()
+      finally:
+        self.follow(parent_path)[item] = {}
+        return parent_path + (item,)
 
       
   def find(self, item):
@@ -57,9 +63,11 @@ class HeirachicalDict:
     if item in idict:
       return item,
     for key, cont in idict.items():
-      if (path:=HeirachicalDict._find_in_dict(cont, item)) is not None:
-        return (key,)+path
-    return None
+      try:
+        return (key,) + HeirachicalDict._find_in_dict(cont, item)
+      except KeyError:
+        continue
+    raise KeyError
     
 
   @staticmethod
@@ -74,12 +82,16 @@ class HeirachicalDict:
 
 if __name__ == '__main__':
   def get_parent_class(obj):
-    return None if (a:=obj.__bases__) == () else a[0]
+    if (a:=obj.__bases__) == ():
+      raise OrphanError
+    else:
+      return a[0]
 
-  def is_class(obj):
-    return type(obj) == type
 
-  builtin_classes = filter(is_class, __builtins__.__dict__.values())
+  builtin_classes = filter(
+    lambda obj: isinstance(obj, type),
+    __builtins__.__dict__.values()
+  )
 
   e = HeirachicalDict.from_iter(builtin_classes, get_parent_class)
   print(e)
